@@ -1,19 +1,8 @@
 {
-  "name": "levelo-ticket-bot",
+  "name": "levelo-bot",
   "version": "1.0.0",
-  "description": "Bot pentru tichete Levelo Community",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "keywords": [
-    "discord",
-    "bot",
-    "tickets"
-  ],
-  "author": "Levelo",
-  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.15.3"
+    "discord.js": "^14.16.0"
   }
 }
