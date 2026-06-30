@@ -1,87 +1,69 @@
-const http = require('http');
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Botul este activ!');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
+
+// 1. Inițializare Client cu toate intențiile necesare
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildInvites
+    ]
 });
-server.listen(process.env.PORT || 3000);
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ChannelType, PermissionsBitField, SlashCommandBuilder, REST, Routes } = require('discord.js');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
-const STAFF_ROLE_ID = '1520692929234997358';
-const MM_ROLES = {
-    'official': '1520693156541370389',
-    'trial': '1520693814476410940',
-    'pvp': '1520694154340859989'
-};
+// Cache pentru a memora numărul de invitații
+const invitesCache = new Map();
 
-// Definirea comenzilor
+// 2. Înregistrarea comenzilor Slash
 const commands = [
-    new SlashCommandBuilder().setName('setup-support').setDescription('Configurează panel-ul de Support'),
-    new SlashCommandBuilder().setName('setup-mm').setDescription('Configurează panel-ul de Middleman')
+    new SlashCommandBuilder()
+        .setName('invites')
+        .setDescription('Verifică câte invitații ai făcut')
 ].map(command => command.toJSON());
 
-// Înregistrarea comenzilor la pornire
+const rest = new REST({ version: '10' }).setToken('TOKEN');
+
 client.once('ready', async () => {
-    const rest = new REST({ version: '10' }).setToken('TOKEN_UL_TAU_AICI');
+    console.log(`Botul ${client.user.tag} este pornit!`);
+
+    // Înregistrare comenzi
     try {
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log('Slash Commands înregistrate cu succes!');
-    } catch (error) { console.error(error); }
+        console.log('Comenzile au fost înregistrate.');
+    } catch (error) {
+        console.error(error);
+    }
+
+    // Încărcare invitații curente în cache
+    client.guilds.cache.forEach(async (guild) => {
+        const firstInvites = await guild.invites.fetch();
+        invitesCache.set(guild.id, new Map(firstInvites.map(i => [i.code, i.uses])));
+    });
 });
 
-// Gestionarea comenzilor /
+// 3. Logica de detectare a invitațiilor noi
+client.on('guildMemberAdd', async (member) => {
+    const guildInvites = await member.guild.invites.fetch();
+    const cachedInvites = invitesCache.get(member.guild.id);
+    
+    // Găsim invitația care a crescut ca număr de utilizări
+    const newInvite = guildInvites.find(i => i.uses > (cachedInvites.get(i.code) || 0));
+
+    if (newInvite) {
+        console.log(`${member.user.tag} a fost invitat de ${newInvite.inviter.tag}`);
+        // Aici poți salva în baza de date numărul de invitații al lui newInvite.inviter.id
+        
+        // Actualizăm cache-ul
+        cachedInvites.set(newInvite.code, newInvite.uses);
+    }
+});
+
+// 4. Răspuns la comanda /invites
 client.on('interactionCreate', async interaction => {
-    if (interaction.isChatInputCommand()) {
-        if (interaction.commandName === 'setup-support') {
-            const embed = new EmbedBuilder().setColor('#3498db').setTitle('Levelo Community - Support').setDescription('Alege tipul de suport:');
-            const row = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('select_support').setPlaceholder('Alege categoria...')
-                .addOptions([
-                    { label: 'General Support', value: 'support' },
-                    { label: 'Purchase', value: 'purchase' }
-                ])
-            );
-            await interaction.reply({ embeds: [embed], components: [row] });
-        }
+    if (!interaction.isChatInputCommand()) return;
 
-        if (interaction.commandName === 'setup-mm') {
-            const embed = new EmbedBuilder().setColor('#e67e22').setTitle('Levelo Community - Middleman').setDescription('Alege rangul de MM necesar:');
-            const row = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('select_mm').setPlaceholder('Alege tipul de MM...')
-                .addOptions([
-                    { label: 'Official MM', value: 'mm_official' },
-                    { label: 'Trial MM', value: 'mm_trial' },
-                    { label: 'PVP MM', value: 'mm_pvp' }
-                ])
-            );
-            await interaction.reply({ embeds: [embed], components: [row] });
-        }
-    }
-
-    // Gestionarea meniurilor (Ticket logic)
-    if (interaction.isStringSelectMenu()) {
-        const value = interaction.values[0];
-        let roleToPing = STAFF_ROLE_ID;
-        if (value.startsWith('mm_')) {
-            const type = value.split('_')[1];
-            roleToPing = MM_ROLES[type];
-        }
-
-        const channel = await interaction.guild.channels.create({
-            name: `${value}-${interaction.user.username}`,
-            type: ChannelType.GuildText,
-            permissionOverwrites: [
-                { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                { id: roleToPing, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-            ]
-        });
-
-        await interaction.reply({ content: `Ticket deschis: ${channel}`, ephemeral: true });
-        await channel.send(`Salut <@${interaction.user.id}>! Un membru al staff-ului te va ajuta în curând. <@&${roleToPing}>`);
+    if (interaction.commandName === 'invites') {
+        // Aici ar trebui să interoghezi baza de date cu interaction.user.id
+        await interaction.reply(`Ai făcut un total de X invitații!`);
     }
 });
 
-client.login(process.env.TOKEN);
-
-              
+client.login('TOKEN');
